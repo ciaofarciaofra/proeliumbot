@@ -7,7 +7,8 @@ Minigame 5 minuti stile HOI4
 - Statistiche ATK / DEF / ORG / Supply
 """
 
-import random, math
+import random
+import math
 from dataclasses import dataclass
 
 # ================= TERRENI 1983 =================
@@ -160,20 +161,18 @@ def genera_divisione(nazione_stats, tipo="fanteria"):
 
 def calcola_battaglia_tick(att_divs, def_divs, terreno, dottr_att, dottr_def, tick):
     """Un tick di battaglia (10 secondi reali = 1 ora in game)"""
-    t_mod = TERRENI[terreno]
-    d_att = DOTTRINE[dottr_att]
-    d_def = DOTTRINE[dottr_def]
+    t_mod = TERRENI.get(terreno, TERRENI["pianura"])
+    d_att = DOTTRINE.get(dottr_att, DOTTRINE["shock"])
+    d_def = DOTTRINE.get(dottr_def, DOTTRINE["fortificata"])
     
     # Somma attacchi
     atk_tot = sum(d.atk * (d.org/100) * (d.supply/100) * (d.equip/100) for d in att_divs if d.org>0)
     def_tot = sum(d.defe * (d.org/100) * (d.supply/100) * (d.equip/100) for d in def_divs if d.org>0)
     
     # Mod terreno + dottrina
-    atk_tot *= t_mod['atk_mod'] * (1 + d_att['bonus_atk']) * (1 + d_def['bonus_atk']*0.3) # difensore contrattacca un po
+    atk_tot *= t_mod['atk_mod'] * (1 + d_att['bonus_atk']) * (1 + d_def['bonus_atk']*0.3)
     def_tot *= t_mod['def_mod'] * (1 + d_def['bonus_def'])
     
-    # Calcolo danni
-    # Formula HOI4-like: damage = (atk / def) * base
     if def_tot == 0: def_tot = 1
     ratio = atk_tot / def_tot
     
@@ -182,27 +181,30 @@ def calcola_battaglia_tick(att_divs, def_divs, terreno, dottr_att, dottr_def, ti
     dmg_to_att_org = (def_tot * 0.06) * random.uniform(0.8,1.2)
     
     # Bonus blitzkrieg primi tick
-    if dottr_att == "blitzkrieg" and tick < 12: # primi 2 minuti
+    if dottr_att == "blitzkrieg" and tick < 12:
         dmg_to_def_org *= 1.4
-    if dottr_def == "difesa_elastica" and tick > 18: # dopo 3 min contrattacco
+    if dottr_def == "difesa_elastica" and tick > 18:
         dmg_to_att_org *= 1.3
-        atk_tot *= 1.2 # difensore contrattacca
+        atk_tot *= 1.2
     
     # Applica danni org
-    for d in def_divs:
-        if d.org>0:
-            d.org = max(0, d.org - dmg_to_def_org / len([x for x in def_divs if x.org>0]))
-            d.supply = max(10, d.supply - random.randint(0,2))
-    for d in att_divs:
-        if d.org>0:
-            d.org = max(0, d.org - dmg_to_att_org / len([x for x in att_divs if x.org>0]))
-            d.supply = max(10, d.supply - random.randint(0,3))
+    active_def = [x for x in def_divs if x.org>0]
+    if active_def:
+        for d in def_divs:
+            if d.org>0:
+                d.org = max(0, d.org - dmg_to_def_org / len(active_def))
+                d.supply = max(10, d.supply - random.randint(0,2))
+                
+    active_att = [x for x in att_divs if x.org>0]
+    if active_att:
+        for d in att_divs:
+            if d.org>0:
+                d.org = max(0, d.org - dmg_to_att_org / len(active_att))
+                d.supply = max(10, d.supply - random.randint(0,3))
     
     # Vantaggio battaglia per freccia
-    # -100 = difensore domina, +100 = attaccante domina
     advantage = (atk_tot - def_tot) / max(atk_tot+def_tot,1) * 100
     
-    # Calcola % freccia
     att_percent = 50 + advantage/2
     att_percent = max(5, min(95, att_percent))
     def_percent = 100 - att_percent
@@ -220,7 +222,6 @@ def calcola_battaglia_tick(att_divs, def_divs, terreno, dottr_att, dottr_def, ti
 
 # ESEMPIO SIMULAZIONE 5 MINUTI
 if __name__ == "__main__":
-    # Nazioni fittizie
     italia = {"soldi":3, "stabilita":3, "esercito":4, "tecnologia":4, "influenza":3}
     libia = {"soldi":2, "stabilita":2, "esercito":2, "tecnologia":2, "influenza":1}
     
@@ -231,14 +232,12 @@ if __name__ == "__main__":
     print(f"Terreno: {TERRENI['deserto']['nome']} - {TERRENI['deserto']['desc']}")
     print(f"Dottrine: IT AirLand vs LY Difesa Fortificata")
     print("")
-    for tick in range(30): # 30 tick *10 sec = 5 min
+    for tick in range(30):
         res = calcola_battaglia_tick(att_divs, def_divs, "deserto", "airland", "fortificata", tick)
-        # barra visuale proporzionale
         bar_att = "█" * (res['att_percent']//5)
         bar_def = "█" * (res['def_percent']//5)
         arrow = f"[ITALIA {bar_att} {res['att_percent']}% | {res['def_percent']}% {bar_def} LIBIA] Adv:{res['advantage']:+d}"
         print(f"T+{tick*10:03d}s {arrow} | ATK:{res['atk_tot']} DEF:{res['def_tot']} Ratio:{res['ratio']}")
-        # check rotta
         if all(d.org<=0 for d in def_divs):
             print(">>> DIFENSORE ROTTO - VITTORIA ATTACCANTE")
             break
